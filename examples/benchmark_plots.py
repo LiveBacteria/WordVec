@@ -72,7 +72,7 @@ def run_benchmarks():
         max_possible = len(nltk_match_names)
         
         # --- Numpy Run ---
-        from hdc_wordnet.vsa import set_backend
+        from hdc_wordnet.vsa import set_backend, permute
         set_backend("numpy")
         
         t0 = time.perf_counter()
@@ -83,7 +83,8 @@ def run_benchmarks():
         
         rel_hypernym_np = mem_np.get_or_create("rel_hypernym")
         target_hdv_np = mem_np.get_or_create(f"synset_{target_hypernym_name}")
-        query_np = bind(rel_hypernym_np, target_hdv_np)
+        # MUST permute the target to form the correct query, matching mapper.py!
+        query_np = bind(rel_hypernym_np, permute(target_hdv_np))
         
         t0_raw = time.perf_counter()
         hdc_results_np = fast_semantic_search(query_np, sp_np, top_n=max(10, max_possible))
@@ -109,7 +110,7 @@ def run_benchmarks():
             
             rel_hypernym_pt = mem_pt.get_or_create("rel_hypernym")
             target_hdv_pt = mem_pt.get_or_create(f"synset_{target_hypernym_name}")
-            query_pt = bind(rel_hypernym_pt, target_hdv_pt)
+            query_pt = bind(rel_hypernym_pt, permute(target_hdv_pt))
             
             # Warmup
             _ = fast_semantic_search(query_pt, sp_pt, top_n=max(10, max_possible))

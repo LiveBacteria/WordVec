@@ -48,22 +48,21 @@ def run_benchmarks():
     sizes = [1000, 5000, 10000, 20000]
     all_nouns = list(wn.all_synsets('n'))
     
-    # Target definition for tests
-    # Query: Find things whose hypernym is "domestic_animal.n.01"
     target_hypernym = wn.synset('domestic_animal.n.01')
     target_hypernym_name = target_hypernym.name()
     
     generation_times = []
     
     nltk_query_times = []
-    hdc_query_times_raw = []        # Just matrix search
-    hdc_query_times_amortized = []  # Space build + matrix search
-
-    accuracies = [] # % of true matches found in HDC's top N
-
-    mem = None
-    spaces = []
     
+    hdc_query_times_raw_np = []
+    hdc_query_times_amortized_np = []
+    
+    hdc_query_times_raw_pt = []
+    hdc_query_times_amortized_pt = []
+
+    accuracies = []
+
     # Pre-build spaces for raw latency and accuracy testing, but explicitly record amortized time
     for s in sizes:
         sub = all_nouns[:s]
@@ -72,46 +71,81 @@ def run_benchmarks():
         nltk_match_names = set([syn.name() for syn in sub if target_hypernym in syn.hypernyms()])
         max_possible = len(nltk_match_names)
         
-        # Amortized Generation Time
+        # --- Numpy Run ---
+        from hdc_wordnet.vsa import set_backend
+        set_backend("numpy")
+        
         t0 = time.perf_counter()
-        mem, sp = build_wordvec_space(sub, memory=mem, dim=10000)
+        mem_np, sp_np = build_wordvec_space(sub, memory=None, dim=10000)
         t1 = time.perf_counter()
-        amortized_cost = t1 - t0
-        generation_times.append(amortized_cost)
-        spaces.append(sp)
+        amortized_cost_np = t1 - t0
+        generation_times.append(amortized_cost_np)
         
-        # We simulate amortized latency for *one* query as: BuildSpace + Search 
-        # (Though practically, we build once and search M times)
+        rel_hypernym_np = mem_np.get_or_create("rel_hypernym")
+        target_hdv_np = mem_np.get_or_create(f"synset_{target_hypernym_name}")
+        query_np = bind(rel_hypernym_np, target_hdv_np)
         
-        # HDC Setup: Create the relational query
-        rel_hypernym = mem.get_or_create("rel_hypernym")
-        target_hdv = mem.get_or_create(f"synset_{target_hypernym_name}")
-        query = bind(rel_hypernym, target_hdv)
-        
-        # A) HDC Raw Query Latency (Just the search matrix op)
         t0_raw = time.perf_counter()
-        hdc_results = fast_semantic_search(query, sp, top_n=max(10, max_possible))
+        hdc_results_np = fast_semantic_search(query_np, sp_np, top_n=max(10, max_possible))
         t1_raw = time.perf_counter()
-        raw_latency = (t1_raw - t0_raw) * 1000 # ms
+        raw_latency_np = (t1_raw - t0_raw) * 1000 # ms
         
-        hdc_query_times_raw.append(raw_latency)
-        hdc_query_times_amortized.append(raw_latency + (amortized_cost * 1000)) # ms + ms
+        hdc_query_times_raw_np.append(raw_latency_np)
+        hdc_query_times_amortized_np.append(raw_latency_np + (amortized_cost_np * 1000))
         
-        # B) NLTK Query latency
+        # --- Torch Run ---
+        try:
+            set_backend("torch")
+            t0 = time.perf_counter()
+            mem_pt, sp_pt = build_wordvec_space(sub, memory=None, dim=10000)
+            
+            # Flush CUDA to ensure generation is done
+            if hasattr(mem_pt.memory.get(list(mem_pt.memory.keys())[0], None), 'is_cuda'):
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+            t1 = time.perf_counter()
+            amortized_cost_pt = t1 - t0
+            
+            rel_hypernym_pt = mem_pt.get_or_create("rel_hypernym")
+            target_hdv_pt = mem_pt.get_or_create(f"synset_{target_hypernym_name}")
+            query_pt = bind(rel_hypernym_pt, target_hdv_pt)
+            
+            # Warmup
+            _ = fast_semantic_search(query_pt, sp_pt, top_n=max(10, max_possible))
+            if torch.cuda.is_available(): torch.cuda.synchronize()
+            
+            t0_raw = time.perf_counter()
+            hdc_results_pt = fast_semantic_search(query_pt, sp_pt, top_n=max(10, max_possible))
+            if torch.cuda.is_available(): torch.cuda.synchronize()
+            t1_raw = time.perf_counter()
+            raw_latency_pt = (t1_raw - t0_raw) * 1000 # ms
+            
+            hdc_query_times_raw_pt.append(raw_latency_pt)
+            hdc_query_times_amortized_pt.append(raw_latency_pt + (amortized_cost_pt * 1000))
+            
+            # Clean up VRAM
+            del mem_pt, sp_pt, query_pt, hdc_results_pt
+            torch.cuda.empty_cache()
+            
+        except Exception as e:
+            print(f"CUDA Not Available or Failed: {e}")
+            hdc_query_times_raw_pt.append(0)
+            hdc_query_times_amortized_pt.append(0)
+        
+        # --- NLTK Run ---
         t0_nltk = time.perf_counter()
         _ = [syn.name() for syn in sub if target_hypernym in syn.hypernyms()]
         t1_nltk = time.perf_counter()
         nltk_query_times.append((t1_nltk - t0_nltk) * 1000) # ms
         
-        # C) Accuracy Calculation
-        # How many of the ground truth NLTK names were in the top HDC results?
+        # --- Accuracy Calculation (from Numpy run) ---
         if max_possible > 0:
-            top_hdc_names = [res[0] for res in hdc_results[:max_possible*2]] # Give it a 2x leeway window for fuzzy similarity
+            top_hdc_names = [res[0] for res in hdc_results_np[:max_possible*2]]
             found = sum(1 for name in nltk_match_names if name in top_hdc_names)
             acc = (found / max_possible) * 100
         else:
-            acc = 100.0 # Trivial if no true answers exist in subset
-        
+            acc = 100.0
         accuracies.append(acc)
 
 
@@ -131,22 +165,27 @@ def run_benchmarks():
 
     # Plot B: Split Latency Bar Chart (Amortized vs Non-Amortized vs Baseline)
     x = np.arange(len(sizes))
-    width = 0.25
+    width = 0.15
 
-    plt.figure(figsize=(10, 6))
-    plt.bar(x - width, nltk_query_times, width, label='NLTK Baseline (Graph Traversal)', color='gray')
-    plt.bar(x, hdc_query_times_raw, width, label='HDC Raw Latency (Matrix Search Only)', color='teal')
+    plt.figure(figsize=(12, 7))
+    plt.bar(x - width*2, nltk_query_times, width, label='NLTK Baseline (Graph)', color='gray')
     
-    # We plot amortized on a logarithmic scale because it drastically dwarfs the raw latency
-    plt.bar(x + width, hdc_query_times_amortized, width, label='HDC Amortized (Generation + Search)', color='indigo', hatch='//')
+    plt.bar(x - width, hdc_query_times_raw_np, width, label='HDC Raw Latency (CPU Numpy)', color='teal')
+    plt.bar(x, hdc_query_times_amortized_np, width, label='HDC Amortized (CPU Numpy)', color='indigo', hatch='//')
+    
+    plt.bar(x + width, hdc_query_times_raw_pt, width, label='HDC Raw Latency (CUDA GPU)', color='darkorange')
+    plt.bar(x + width*2, hdc_query_times_amortized_pt, width, label='HDC Amortized (CUDA GPU)', color='darkred', hatch='//')
 
-    plt.yscale('log') # Log scale is critical to see raw latency alongside amortized!
+    plt.yscale('log')
     plt.title('Search Latency Comparison (Log Scale)')
-    plt.xlabel('Search Domain Size (Number of Synsets)')
-    plt.ylabel('Latency (ms) [Log Scale]')
+    plt.xlabel('Search Domain Size (Number of Synsets)', fontsize=12)
+    plt.ylabel('Latency (ms) [Log Scale]', fontsize=12)
     plt.xticks(x, [str(s) for s in sizes])
-    plt.legend()
+    
+    # Place legend outside to avoid obscuring bars
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
     plt.savefig('assets/query_latency.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("  -> Saved 'assets/query_latency.png'")

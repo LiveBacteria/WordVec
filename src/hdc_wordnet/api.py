@@ -72,26 +72,42 @@ def semantic_search(query: np.ndarray, space: Dict[str, np.ndarray], top_n: int 
     return results[:top_n]
 
 
-def fast_semantic_search(query: np.ndarray, space: Dict[str, np.ndarray], top_n: int = 5) -> List[Tuple[str, float]]:
+def fast_semantic_search(query, space: Dict, top_n: int = 5) -> List[Tuple[str, float]]:
     """
-    Vectorized O(N) search across the entire dictionary. Much faster than loop-based.
+    Vectorized O(N) search across the entire dictionary. Supports both Numpy and PyTorch.
     """
     if not space:
         return []
     
+    from hdc_wordnet.vsa import config
     names = list(space.keys())
-    # Shape: (N, D)
-    matrix = np.array(list(space.values()), dtype=np.int32)
-    q_vec = query.astype(np.int32)
     
-    # Dot product broadcasts: (N, D) dot (D,) -> (N,)
-    sim_scores = np.dot(matrix, q_vec) / float(len(query))
-    
-    # Find top N indices
-    # argsort is ascending, so take the last top_n and reverse
-    top_indices = np.argsort(sim_scores)[-top_n:][::-1]
-    
-    return [(names[idx], float(sim_scores[idx])) for idx in top_indices]
+    if config.backend == "torch":
+        import torch
+        # Shape: (N, D)
+        matrix = torch.stack(list(space.values())).to(torch.float32)
+        q_vec = query.to(torch.float32)
+        
+        # Matrix multiply (CUDA requires floats for mv/mm)
+        sim_scores = torch.mv(matrix, q_vec) / float(len(query))
+        
+        # Find top N indices (descending)
+        top_indices = torch.argsort(sim_scores, descending=True)[:top_n]
+        return [(names[idx.item()], float(sim_scores[idx].item())) for idx in top_indices]
+    else:
+        # Shape: (N, D)
+        matrix = np.array(list(space.values()), dtype=np.int32)
+        q_vec = query.astype(np.int32)
+        
+        # Dot product broadcasts: (N, D) dot (D,) -> (N,)
+        sim_scores = np.dot(matrix, q_vec) / float(len(query))
+        
+        # Find top N indices
+        # argsort is ascending, so take the last top_n and reverse
+        top_indices = np.argsort(sim_scores)[-top_n:][::-1]
+        
+        return [(names[idx], float(sim_scores[idx])) for idx in top_indices]
+
 
 
 class QueryBuilder:

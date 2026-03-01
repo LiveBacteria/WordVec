@@ -61,9 +61,11 @@ If we naively bound `rel_hypernym` $\odot$ `synset_animal`, queries would confus
 To enforce strict edge directionality, HDC-WordNet utilizes **Permutation ($\rho$)**—a 1-step circular shift of the vector dimensions. Permutation is asymmetric ($\rho(A) \neq A$).
 
 **The Formal Mapping Algorithm:**
-For a given Synset ($S$), and its target relations ($T_1, T_2$), the HDV encodes the directed edge by permuting the target node *before* binding it to the relation type:
+For a given Synset ($S$), its target relations ($T_1, T_2$), and its semantic definition ($D$ composed of words $w_1, w_2, \dots$), the HDV encodes the directed edge by permuting the target node *before* binding it to the relation type:
 
-$$ S \approx bundle( \ pos \ , \ rel_{hypernym} \odot \rho(T_1) \ , \ rel_{lemma} \odot \rho(T_2) \ ) $$
+$$ S \approx bundle( \ pos \ , \ rel_{hypernym} \odot \rho(T_1) \ , \ rel_{definition} \odot \rho(bundle(w_1, w_2, \dots)) ) $$
+
+Because VSA binding distributes over bundling ($A \odot bundle(B, C) = bundle(A \odot B, A \odot C)$), natural language queries can search for specific words within synset definitions simply by structuring the query as: $Query = rel_{definition} \odot \rho(w_{query})$. Therefore, the semantic space integrates relational graph edges AND the natural language definition content seamlessly!
 
 **The Query Execution:**
 To traverse the graph (e.g., finding the hypernym of $S$), the `QueryBuilder` algebraically binds the origin node to the target relation. Because bipolar vectors are self-inverting ($X \odot X = 1$), binding extracts the isolated term:

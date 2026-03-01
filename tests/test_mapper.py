@@ -45,3 +45,33 @@ def test_encode_synset():
     # We expect some similarity because they share 'pos_n' and their structural encoding
     # shares the hypernym binding, but they differ in base tokens.
     assert sim > 0.05
+
+def test_definition_encoding():
+    from hdc_wordnet.vsa import bind, permute, bundle
+    memory = ItemMemory(dim=5000)
+    # The definition of dog is: "a member of the genus Canis (probably descended from the common wolf) that has been domesticated by man since prehistoric times; occurs in many breeds"
+    # word "canis" should be in the definition
+    dog_synset = wn.synsets('dog')[0]
+    dog_hdv = encode_synset(dog_synset, memory)
+    
+    rel_def = memory.get_or_create("rel_definition")
+    word_canis = memory.get_or_create("word_canis")
+    word_wolf = memory.get_or_create("word_wolf")
+    word_computer = memory.get_or_create("word_computer") # Should NOT be in the definition
+    
+    # We query the dog_hdv for what is bound to its `rel_definition`.
+    # H(dog) ~ bundle(..., bind(rel_definition, permute(bundle(word_1, word_2, ...))))
+    # Since VSA binding over bundle distributes, bind(rel_definition, permute(bundle(w))) == bundle(bind(rel_definition, permute(w1)), ...)
+    # To check if `word_canis` is part of the definition, we simulate the encoded component:
+    target_component_canis = bind(rel_def, permute(word_canis))
+    target_component_wolf = bind(rel_def, permute(word_wolf))
+    target_component_computer = bind(rel_def, permute(word_computer))
+    
+    sim_canis = cosine_similarity(dog_hdv, target_component_canis)
+    sim_wolf = cosine_similarity(dog_hdv, target_component_wolf)
+    sim_computer = cosine_similarity(dog_hdv, target_component_computer)
+    
+    assert sim_canis > 0.04  # Significant connection
+    assert sim_wolf > 0.02   # Significant connection
+    assert abs(sim_computer) < 0.03 # Noise level 
+

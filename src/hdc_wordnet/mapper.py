@@ -9,6 +9,7 @@ to compose complex semantic episodes from Synsets.
 import numpy as np
 from nltk.corpus import wordnet as wn
 import nltk
+import re
 
 from typing import Dict, List, Optional
 from hdc_wordnet.vsa import generate_vector, bind, bundle, permute, cosine_similarity
@@ -101,5 +102,19 @@ def encode_synset(synset, item_memory: ItemMemory) -> np.ndarray:
         lem_token = f"lemma_{lemma.name()}"
         lem_hdv = item_memory.get_or_create(lem_token)
         components.append(bind(rel_lemma, permute(lem_hdv)))
+        
+    # 4. Gloss / Definition (bag of words, bound and permuted)
+    rel_definition = item_memory.get_or_create("rel_definition")
+    definition = synset.definition()
+    # Simple tokenization: lowercase, alpha-numeric words
+    words = re.findall(r'\b\w+\b', definition.lower())
+    if words:
+        word_hdvs = []
+        for w in words:
+            word_token = f"word_{w}"
+            word_hdvs.append(item_memory.get_or_create(word_token))
+        
+        gloss_hdv = bundle(word_hdvs)
+        components.append(bind(rel_definition, permute(gloss_hdv)))
         
     return bundle(components)

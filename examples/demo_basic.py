@@ -65,5 +65,14 @@ def run_demo():
     for res, sim in results_dog:
         print(f"  {res}: {sim:.4f}")
 
+    # Example 2: Querying via natural language definition semantics
+    print("\n--- Example 2: Querying by Gloss/Definition Semantic Content ---")
+    # Finding an animal whose definition contains the concept "canine"
+    # Query: What has `word_canine` in its definition?
+    query_def = qb.relate("rel_definition", "word_canine")
+    results_def = fast_semantic_search(query_def, space, top_n=5)
+    for res, score in results_def:
+        print(f"Match: {res} | Sim: {score:.4f}")
+
 if __name__ == "__main__":
     run_demo()

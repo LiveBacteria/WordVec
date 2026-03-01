@@ -52,6 +52,30 @@ The top-level user-facing API:
 
 ---
 
+## 📐 Formal Mathematical Mapping & Directionality
+
+In VSA, basic **Binding** (element-wise multiplication $\odot$) is symmetric/commutative ($A \odot B = B \odot A$). This works perfectly for undirected associations or simple Key-Value pairs. However, WordNet representations like **Hypernymy** (`dog IS-A animal`) are fundamentally **directed, asymmetric graphs**. 
+
+If we naively bound `rel_hypernym` $\odot$ `synset_animal`, queries would confuse the path. Asking "What is the hypernym of dog?" ($dog \odot rel\_hypernym$) would cleanly return `animal`, but the math would simultaneously imply that the relation works both ways (conflating hypernymy with hyponymy). 
+
+To enforce strict edge directionality, HDC-WordNet utilizes **Permutation ($\rho$)**—a 1-step circular shift of the vector dimensions. Permutation is asymmetric ($\rho(A) \neq A$).
+
+**The Formal Mapping Algorithm:**
+For a given Synset ($S$), and its target relations ($T_1, T_2$), the HDV encodes the directed edge by permuting the target node *before* binding it to the relation type:
+
+$$ S \approx bundle( \ pos \ , \ rel_{hypernym} \odot \rho(T_1) \ , \ rel_{lemma} \odot \rho(T_2) \ ) $$
+
+**The Query Execution:**
+To traverse the graph (e.g., finding the hypernym of $S$), the `QueryBuilder` algebraically binds the origin node to the target relation. Because bipolar vectors are self-inverting ($X \odot X = 1$), binding extracts the isolated term:
+
+$$ Query = S \odot rel_{hypernym} $$
+$$ Query \approx (rel_{hypernym} \odot \rho(T_1)) \odot rel_{hypernym} $$
+$$ Query \approx \rho(T_1) $$
+
+The query result yields $\rho(T_1)$ (the permuted target). The `QueryBuilder.relate()` function natively applies this required $\rho$ shift to queries so they cleanly align with the directional mapping in the matrix, completely eliminating symmetric noise and reverse-path bleeding.
+
+---
+
 ## 🚀 CUDA GPU Acceleration (Optional)
 
 HDC-WordNet fundamentally supports two mathematical backends bridging the same logic: **NumPy (CPU)** and **PyTorch (GPU)**. 
@@ -91,11 +115,14 @@ memory, space = build_wordvec_space(subset)
 
 # 3. Create a query logically
 qb = QueryBuilder(memory)
-# "Find concepts where their hypernym is a domestic animal"
-query = qb.relate('rel_hypernym', 'synset_domestic_animal.n.01')
+# 2. Relational Query (What is the hypernym of dog?)
+# Because 'dog IS-A animal' is asymmetric, HDC-WordNet enforces
+# directionality via Permutation (rho) under the hood! 
+# A symmetric A*B == B*A bind would confuse 'hypernym' with 'hyponym'.
+# QueryBuilder.relate() correctly permutes the target before binding.
 
-# 4. Search and retrieve the closest semantic analogies
-results = fast_semantic_search(query, space, top_n=5)
+query = qb.relate("rel_hypernym", "synset_dog.n.01")
+results = fast_semantic_search(query, space, top_n=3)
 print(results)
 ```
 

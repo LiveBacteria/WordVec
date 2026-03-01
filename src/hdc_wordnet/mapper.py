@@ -86,18 +86,20 @@ def encode_synset(synset, item_memory: ItemMemory) -> np.ndarray:
     pos_hdv = item_memory.get_or_create(pos_token)
     components.append(pos_hdv)
     
-    # 2. Hypernyms (using bind)
+    # 2. Hypernyms (using bind and permute for directionality)
     rel_hypernym = item_memory.get_or_create("rel_hypernym")
     for hypernym in synset.hypernyms():
         hyp_token = f"synset_{hypernym.name()}"
         hyp_hdv = item_memory.get_or_create(hyp_token)
-        components.append(bind(rel_hypernym, hyp_hdv))
+        # We apply `permute` to the target to encode directionality (X -> Y).
+        # This prevents symmetric confounding (A * B == B * A).
+        components.append(bind(rel_hypernym, permute(hyp_hdv)))
         
-    # 3. Lemmas (using permute to designate containment)
+    # 3. Lemmas (using bind and permute)
     rel_lemma = item_memory.get_or_create("rel_lemma")
     for lemma in synset.lemmas():
         lem_token = f"lemma_{lemma.name()}"
         lem_hdv = item_memory.get_or_create(lem_token)
-        components.append(bind(rel_lemma, lem_hdv))
+        components.append(bind(rel_lemma, permute(lem_hdv)))
         
     return bundle(components)

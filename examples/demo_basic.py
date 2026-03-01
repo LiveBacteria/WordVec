@@ -47,6 +47,16 @@ def run_demo():
     print(f"Search took {end_s - start_s:.4f} seconds.")
     for res, sim in results:
         print(f"  {res}: {sim:.4f}")
+    # Example 1: "What is the hypernym of 'dog'?"
+    # We want to find X such that: bind(rel_hypernym, permute(X)) is in dog's vector.
+    # Therefore X ≈ bundle of items whose permuted selves were bound to rel_hypernym.
+    # The `QueryBuilder.relate` fundamentally handles this directed edge: it permutes the target.
+    print("\n--- Example 1: Directed Semantic Search ---")
+    query_hypernym = qb.relate("rel_hypernym", "synset_dog.n.01")
+    
+    results = fast_semantic_search(query_hypernym, space, top_n=3)
+    for res, score in results:
+        print(f"Match: {res} | Sim: {score:.4f}")
 
     # Another Query: What is closest to 'dog.n.01'?
     query_dog = space['dog.n.01']

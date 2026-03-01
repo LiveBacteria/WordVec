@@ -123,12 +123,14 @@ class QueryBuilder:
         
     def relate(self, relation: str, target_token: str) -> np.ndarray:
         """
-        Creates a structured relation bound to a target.
+        Creates a structured relation bound to a target, ensuring directed edge
+        encoding via permutation (rho).
         E.g., QueryBuilder.relate('rel_hypernym', 'synset_animal.n.01')
         """
+        from hdc_wordnet.vsa import permute
         r_hdv = self.get_base(relation)
         t_hdv = self.get_base(target_token)
-        return bind(r_hdv, t_hdv)
+        return bind(r_hdv, permute(t_hdv))
         
     def compose(self, components: List[np.ndarray], threshold: bool = True) -> np.ndarray:
         """

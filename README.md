@@ -143,11 +143,15 @@ This will extract tens of thousands of nouns and benchmark ingestion times and s
 
 ---
 
-## WordNet Baseline vs HDC-WordNet
+## WordNet Baseline vs HDC-WordNet: Topology vs Vector Space
+
+**WordNet** operates fundamentally as a topological graph. Its semantic space is defined by explicit, rigid memory pointers linking isolated nodes (Synsets, Lemmas) into a vast, discrete structural web. Extracting semantic meaning or retrieving relationships requires strict, node-by-node graph traversal (e.g., calling `synset.hypernyms()`). 
+
+**WordVec**, conversely, transports this semantic basis natively into high-dimensional vector space. By encoding the topological edges algebraically using Vector Symbolic Architectures (VSA), relations are no longer discrete pointers but active mathematical variables superimposed into a single holistic tensor. This spatial transposition unlocks true symbolic analogy, continuous fuzzy association, and global context searching via single-step matrix operations.
 
 ### Analogical Reasoning (Relations via Binding)
 
-In standard WordNet (NLTK), finding "what has a specific relationship to a concept" involves deterministic graph traversal (e.g., following `hypernyms()` pointers). While exact and fast, it lacks the ability to execute fuzzy, machine-learning style analogies.
+Because WordNet relies on deterministic graph pointer traversal, it lacks the ability to execute fuzzy, machine-learning style semantic analogies natively.
 
 In **HDC-WordNet**, analogical reasoning emerges naturally from the algebra. A Synset vector $S$ is composed of relations bound to their targets, bundled together:
 
